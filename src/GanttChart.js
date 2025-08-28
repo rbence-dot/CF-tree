@@ -8,6 +8,7 @@ export default class GanttChart extends Component {
         this.ganttContainer = React.createRef();
         this.isDragging = false;
         this.lastPosX = 0;
+        this.isTaskBeingAdded = false;
     }
 
     componentDidMount() {
@@ -19,6 +20,83 @@ export default class GanttChart extends Component {
 
         gantt.init(this.ganttContainer.current);
         this.updateGantt(this.props.dataMap);
+
+        gantt.attachEvent("onAfterTaskAdd", (id, task) => {
+            if (this.isTaskBeingAdded) {
+                return;
+            }
+            this.isTaskBeingAdded = true;
+
+            const { setDataMap, setChildrenMap, setCollapsed, dataMap, childrenMap, collapsed } = this.props;
+            const newNode = {
+                id: task.id,
+                label: task.text,
+                parent: task.parent,
+                category: dataMap[task.parent]?.category || "",
+                bg: dataMap[task.parent]?.bg || "#ffffff",
+                text: dataMap[task.parent]?.text || "#000000",
+            };
+            const newDataMap = { ...dataMap, [task.id]: newNode };
+
+            const newChildrenMap = { ...childrenMap };
+            if (newChildrenMap[task.parent]) {
+                newChildrenMap[task.parent].push(task.id);
+            } else {
+                newChildrenMap[task.parent] = [task.id];
+            }
+
+            const newCollapsed = new Set(collapsed);
+            newCollapsed.add(task.id);
+
+            setDataMap(newDataMap);
+            setChildrenMap(newChildrenMap);
+            setCollapsed(newCollapsed);
+
+            setTimeout(() => {
+                this.isTaskBeingAdded = false;
+            }, 500);
+        });
+
+        gantt.attachEvent("onAfterTaskDelete", (id, task) => {
+            const { setDataMap, setChildrenMap, dataMap, childrenMap } = this.props;
+            const newDataMap = { ...dataMap };
+            delete newDataMap[id];
+
+            const newChildrenMap = { ...childrenMap };
+            if (newChildrenMap[task.parent]) {
+                newChildrenMap[task.parent] = newChildrenMap[task.parent].filter(
+                    (childId) => childId !== id
+                );
+            }
+
+            setDataMap(newDataMap);
+            setChildrenMap(newChildrenMap);
+        });
+
+        gantt.attachEvent("onAfterTaskDrag", (id, mode, task, original) => {
+            const { setDataMap } = this.props;
+            const updatedTask = gantt.getTask(id);
+            const newDataMap = { ...this.props.dataMap };
+            newDataMap[id] = {
+                ...newDataMap[id],
+                start_date: this.formatDate(updatedTask.start_date),
+                duration: updatedTask.duration,
+            };
+            setDataMap(newDataMap);
+        });
+
+        gantt.attachEvent("onAfterTaskChange", (id, task) => {
+            const { setDataMap } = this.props;
+            const updatedTask = gantt.getTask(id);
+            const newDataMap = { ...this.props.dataMap };
+            newDataMap[id] = {
+                ...newDataMap[id],
+                text: updatedTask.text,
+                start_date: this.formatDate(updatedTask.start_date),
+                duration: updatedTask.duration,
+            };
+            setDataMap(newDataMap);
+        });
 
         gantt.ext.zoom.init({
             levels: [
@@ -53,7 +131,16 @@ export default class GanttChart extends Component {
         }
     }
 
+    formatDate(date) {
+        const d = new Date(date);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}-${month}-${year}`;
+    }
+
     transformDataForGantt(dataMap) {
+        const { collapsed } = this.props;
         const tasks = [];
         const links = [];
         let linkId = 1;
@@ -67,7 +154,7 @@ export default class GanttChart extends Component {
                 duration: node.duration || 5,
                 parent: id === 'root' ? 0 : node.parent,
                 progress: 0.5,
-                open: true,
+                open: !collapsed.has(id),
             });
 
             if (node.parent) {

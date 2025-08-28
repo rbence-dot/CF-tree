@@ -6,7 +6,7 @@ import { buildInitialMap, getInitiatives, getCategories, ROOT_ID } from './FlowC
 
 function App() {
   const [dataMap, setDataMap] = useState(buildInitialMap());
-  const [collapsed, setCollapsed] = useState(new Set());
+  const [collapsed, setCollapsed] = useState(new Set(getCategories().map(c => c.id)));
   const [costLegend, setCostLegend] = useState({
     low: { value: "10,000", bg: "#dbeafe", text: "#1e40af" },
     medium: { value: "50,000", bg: "#ffedd5", text: "#9a3412" },
@@ -55,7 +55,7 @@ function App() {
               />
             }
           />
-          <Route path="/gantt" element={<GanttChart dataMap={dataMap} />} />
+          <Route path="/gantt" element={<GanttChart dataMap={dataMap} setDataMap={setDataMap} childrenMap={childrenMap} setChildrenMap={setChildrenMap} collapsed={collapsed} setCollapsed={setCollapsed} />} />
         </Routes>
       </div>
     </Router>
