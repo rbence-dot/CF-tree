@@ -10,7 +10,7 @@ import React, { useMemo, useRef, useState, useEffect } from "react";
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── IDs
-const ROOT_ID = "root";
+export const ROOT_ID = "root";
 
 // ── Base data (from your Control Factor Tree)
 const categories = [
@@ -53,6 +53,9 @@ const initiatives = [
   { parent: "efficiency", id: "training", label: "Process Optimisation & Training", category: "Energy Efficiency", savings: "Medium", effort: "Low" },
 ];
 
+export const getInitiatives = () => initiatives;
+export const getCategories = () => categories;
+
 // ── Defaults
 const defaults = {
   bg: {
@@ -67,7 +70,7 @@ const defaults = {
 };
 
 // ── Build base nodes map
-function buildInitialMap() {
+export function buildInitialMap() {
   const map = {};
   map[ROOT_ID] = { id: ROOT_ID, label: "Saiccor Energy Optimisation Program", category: "Energy Efficiency", bg: defaults.bg["Energy Efficiency"], text: defaults.text };
   for (const c of categories) map[c.id] = { ...c, bg: defaults.bg[c.category], text: defaults.text };
@@ -258,23 +261,17 @@ function Edge({ points }) {
   return <polyline points={d} fill="none" stroke={defaults.edge} strokeWidth={1.5} markerEnd="url(#arrow)" />;
 }
 
-export default function FlowChart() {
-  const [dataMap, setDataMap] = useState(buildInitialMap);
-  const [collapsed, setCollapsed] = useState(new Set()); // category ids
+export default function FlowChart({
+  dataMap,
+  setDataMap,
+  collapsed,
+  setCollapsed,
+  costLegend,
+  setCostLegend,
+  childrenMap,
+  setChildrenMap,
+}) {
   const [selected, setSelected] = useState(null); // node id
-  const [costLegend, setCostLegend] = useState({
-    low: { value: "10,000", bg: "#dbeafe", text: "#1e40af" },
-    medium: { value: "50,000", bg: "#ffedd5", text: "#9a3412" },
-    high: { value: "100,000", bg: "#fecaca", text: "#991b1b" },
-  });
-  const [childrenMap, setChildrenMap] = useState(() => {
-    const initialChildren = categories.reduce((acc, c) => {
-      acc[c.id] = initiatives.filter((i) => i.parent === c.id).map((i) => i.id);
-      return acc;
-    }, {});
-    initialChildren[ROOT_ID] = categories.map((c) => c.id);
-    return initialChildren;
-  });
 
   const parentMap = useMemo(() => {
     const map = {};
@@ -677,3 +674,6 @@ export default function FlowChart() {
       </div>
   );
 }
+
+
+
