@@ -1,8 +1,6 @@
 import React, { Component } from 'react';
 import { gantt } from 'dhtmlx-gantt';
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css';
-// Enable manual column resizing in the grid
-// Removed static grid_resize import; initialize extension via dhtmlxGantt API
 
 export default class GanttChart extends Component {
     constructor(props) {
@@ -17,21 +15,18 @@ export default class GanttChart extends Component {
     }
 
     componentDidMount() {
-        // Enable zoom and column resizing
         gantt.plugins({
-            zoom: true,
-            grid_resize: true
+            zoom: true
         });
 
         gantt.config.fit_tasks = true;
 
-        // Allow columns to be resized by dragging
         gantt.config.columns = [
-            { name: "text", label: "Task name", tree: true, width: '', resize: true },
-            { name: "start_date", label: "Start time", align: "center", resize: true },
-            { name: "duration", label: "Duration", align: "center", resize: true },
-            { name: "progress", label: "Progress", align: "center", template: (task) => `${Math.round(task.progress * 100)}%`, resize: true },
-            { name: "add", label: "", width: 44, resize: true }
+            { name: "text", label: "Task name", tree: true, width: '' },
+            { name: "start_date", label: "Start time", align: "center" },
+            { name: "duration", label: "Duration", align: "center" },
+            { name: "progress", label: "Progress", align: "center", template: (task) => `${Math.round(task.progress * 100)}%` },
+            { name: "add", label: "", width: 44 }
         ];
 
         gantt.templates.task_class = (start, end, task) => {
@@ -44,95 +39,8 @@ export default class GanttChart extends Component {
             }
         };
 
-    gantt.init(this.ganttContainer.current);
-        // Add draggable splitter between grid and chart to adjust overall grid width
-        setTimeout(() => {
-            const container = this.ganttContainer.current;
-            if (!container) return;
-            const gridEl = container.querySelector('.gantt_grid');
-            if (!gridEl) return;
-            const splitter = document.createElement('div');
-            splitter.style.position = 'absolute';
-            splitter.style.top = '0';
-            splitter.style.left = gridEl.offsetWidth + 'px';
-            splitter.style.width = '4px';
-            splitter.style.height = '100%';
-            splitter.style.cursor = 'col-resize';
-            splitter.style.zIndex = '10';
-            container.appendChild(splitter);
-            let startX, startWidth;
-            const onMouseMove = (e) => {
-                const dx = e.clientX - startX;
-                const newWidth = Math.max(100, startWidth + dx);
-                gantt.config.grid_width = newWidth;
-                gantt.render();
-                splitter.style.left = newWidth + 'px';
-            };
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
-            splitter.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                startX = e.clientX;
-                startWidth = gridEl.offsetWidth;
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            });
-        }, 0);
+        gantt.init(this.ganttContainer.current);
         this.updateGantt(this.props.dataMap);
-
-        // Define a function to inject the task name column resize handle
-        const injectColumnResizer = () => {
-            const container = this.ganttContainer.current;
-            if (!container) return;
-            const headerCells = container.querySelectorAll?.('.gantt_grid_head_cell');
-            const textHeader = headerCells && headerCells[0];
-            // Remove any existing handle to avoid duplicates
-            if (textHeader) {
-                textHeader.style.position = 'relative';
-                const existing = textHeader.querySelector('.col-resize-handle');
-                if (existing) existing.remove();
-                const colHandle = document.createElement('div');
-                colHandle.className = 'col-resize-handle';
-                colHandle.style.position = 'absolute';
-                colHandle.style.top = '0';
-                colHandle.style.right = '0';
-                colHandle.style.width = '6px';
-                colHandle.style.height = '100%';
-                colHandle.style.cursor = 'col-resize';
-                colHandle.style.zIndex = '10';
-                textHeader.appendChild(colHandle);
-                let startX, startWidth;
-                const onMouseMove = e => {
-                    const dx = e.clientX - startX;
-                    const newWidth = Math.max(100, startWidth + dx);
-                    gantt.config.columns[0].width = newWidth;
-                    // call original render to trigger inject
-                    gantt.render();
-                };
-                const onMouseUp = () => {
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                };
-                colHandle.addEventListener('mousedown', e => {
-                    e.preventDefault();
-                    startX = e.clientX;
-                    startWidth = textHeader.offsetWidth;
-                    document.addEventListener('mousemove', onMouseMove);
-                    document.addEventListener('mouseup', onMouseUp);
-                });
-            }
-        };
-        // Override gantt.render to always inject the resizer after each render
-        const originalRender = gantt.render;
-        gantt.render = function() {
-            const result = originalRender.apply(this, arguments);
-            injectColumnResizer();
-            return result;
-        };
-        // Initial injection
-        injectColumnResizer();
 
         gantt.attachEvent("onAfterTaskAdd", (id, task) => {
             if (this.isTaskBeingAdded) {

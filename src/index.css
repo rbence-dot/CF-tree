@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fallback styling for Action Plan table in case Tailwind utilities are not processed */
+.action-plan-wrapper { font-family: Arial, sans-serif; font-size: 12px; }
+.action-plan-title { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
+.action-plan-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.action-plan-table th, .action-plan-table td { border: 1px solid #d1d5db; padding: 4px 6px; vertical-align: top; font-weight: 400; }
+.action-plan-table th { background: #f3f4f6; font-weight: 600; text-align: left; white-space: nowrap; }
+.action-plan-table tbody tr:nth-child(even) { background: #fafafa; }
+.action-plan-table td input { width: 100%; height: 100%; border: none; outline: 2px solid #3b82f6; padding: 2px 4px; font-size: 12px; }
+.action-plan-number { text-align: center; width: 48px; }
+.action-plan-collapse-btn { border: 1px solid #9ca3af; background: #fff; width: 18px; height: 18px; font-size: 10px; line-height: 16px; display: inline-flex; align-items: center; justify-content: center; margin-right: 4px; cursor: pointer; }
+.action-plan-selected { background: #e0f2fe !important; }
+.action-plan-help { margin-top: 8px; font-size: 11px; color: #6b7280; display: flex; gap: 16px; flex-wrap: wrap; }
+
 html, body, #root {
   height: 100%;
 }

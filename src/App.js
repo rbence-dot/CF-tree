@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import FlowChart, { buildInitialMap, ROOT_ID } from './FlowChart';
 import GanttChart from './GanttChart';
+import ActionPlan from './ActionPlan';
 
 function App() {
   // Initialize with only the root node so future tasks have an anchor
@@ -21,13 +22,16 @@ function App() {
     <Router>
       <div>
         <nav>
-          <ul>
-            <li>
-              <Link to="/">Flow Chart</Link>
-            </li>
-            <li>
-              <Link to="/gantt">Gantt Chart</Link>
-            </li>
+              <ul>
+                <li>
+                  <Link to="/">Flow Chart</Link>
+                </li>
+                <li>
+                  <Link to="/gantt">Gantt Chart</Link>
+                </li>
+                <li>
+                  <Link to="/action-plan">Action Plan</Link>
+                </li>
           </ul>
         </nav>
 
@@ -50,6 +54,14 @@ function App() {
             }
           />
           <Route path="/gantt" element={<GanttChart dataMap={dataMap} setDataMap={setDataMap} childrenMap={childrenMap} setChildrenMap={setChildrenMap} collapsed={collapsed} setCollapsed={setCollapsed} costLegend={costLegend} setCostLegend={setCostLegend} />} />
+              <Route path="/action-plan" element={
+                <ActionPlan
+                  dataMap={dataMap}
+                  childrenMap={childrenMap}
+                  collapsed={collapsed}
+                  setCollapsed={setCollapsed}
+                />
+              } />
         </Routes>
       </div>
     </Router>
