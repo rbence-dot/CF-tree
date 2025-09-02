@@ -9,7 +9,9 @@ export default class GanttChart extends Component {
         this.loadInputRef = React.createRef();
         this.isDragging = false;
         this.lastPosX = 0;
-        this.isTaskBeingAdded = false;
+    this.isTaskBeingAdded = false;
+    // Flag to prevent recursive updates between Gantt and React state
+    this.isSyncing = false;
     }
 
     componentDidMount() {
@@ -165,6 +167,11 @@ export default class GanttChart extends Component {
     }
 
     componentDidUpdate(prevProps) {
+        // If we just synced state to dataMap, skip re-render to avoid loops
+        if (this.isSyncing) {
+            this.isSyncing = false;
+            return;
+        }
         if (this.props.dataMap !== prevProps.dataMap) {
             this.updateGantt(this.props.dataMap);
         }
@@ -235,6 +242,52 @@ export default class GanttChart extends Component {
             .filter(pid => pid === '0')
             .forEach(pid => childrenMap[pid].forEach(computeProgress));
 
+        // Aggregate start/end dates so parent spans from earliest child start to latest child end
+        const parseDate = (input) => {
+            // If already a Date instance, return it
+            if (input instanceof Date) return input;
+            // If timestamp or number, convert directly
+            if (typeof input === 'number') return new Date(input);
+            // If string of format 'DD-MM-YYYY', split and parse
+            if (typeof input === 'string' && input.includes('-')) {
+                const parts = input.split('-').map(Number);
+                if (parts.length === 3) {
+                    const [d, m, y] = parts;
+                    return new Date(y, m - 1, d);
+                }
+            }
+            // Fallback: let Date parser handle it
+            return new Date(input);
+        };
+        const formatDate = (date) => {
+            const dd = String(date.getDate()).padStart(2, '0');
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const yyyy = date.getFullYear();
+            return `${dd}-${mm}-${yyyy}`;
+        };
+        const computeBounds = (id) => {
+            const node = taskMap[id];
+            const kids = childrenMap[id] || [];
+            // compute own bounds
+            let start = parseDate(node.start_date);
+            let end = new Date(start);
+            end.setDate(end.getDate() + (node.duration || 0));
+            // include children's bounds
+            if (kids.length > 0) {
+                kids.forEach(cid => {
+                    const { start: cs, end: ce } = computeBounds(cid);
+                    if (cs < start) start = cs;
+                    if (ce > end) end = ce;
+                });
+                // update node to new bounds
+                node.start_date = formatDate(start);
+                node.duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+            }
+            return { start, end };
+        };
+        // Apply bounds to top-level nodes (parent=0)
+        (childrenMap['0'] || []).forEach(computeBounds);
+
         return { data: tasks, links };
     }
 
@@ -243,21 +296,7 @@ export default class GanttChart extends Component {
         const { data, links } = this.transformDataForGantt(dataMap);
         gantt.clearAll();
         gantt.parse({ data, links });
-        // Sync aggregated progress for parents back into React state
-        const { setDataMap } = this.props;
-        let changed = false;
-        const newDataMap = { ...dataMap };
-        data.forEach(task => {
-            const id = String(task.id);
-            const existing = dataMap[id];
-            if (existing && typeof existing.progress === 'number' && existing.progress !== task.progress) {
-                newDataMap[id] = { ...existing, progress: task.progress };
-                changed = true;
-            }
-        });
-        if (changed) {
-            setDataMap(newDataMap);
-        }
+    // Note: React state sync removed here to prevent infinite update loops.
     }
 
     handleMouseDown = (e) => {
