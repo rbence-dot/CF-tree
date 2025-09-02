@@ -1,27 +1,21 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import FlowChart from './FlowChart';
+import FlowChart, { buildInitialMap, ROOT_ID } from './FlowChart';
 import GanttChart from './GanttChart';
-import { buildInitialMap, getInitiatives, getCategories, ROOT_ID } from './FlowChart';
 
 function App() {
-  const [dataMap, setDataMap] = useState(buildInitialMap());
-  const [collapsed, setCollapsed] = useState(new Set(getCategories().map(c => c.id)));
+  // Initialize with only the root node so future tasks have an anchor
+  const initialRootMap = buildInitialMap();
+  const [dataMap, setDataMap] = useState({ [ROOT_ID]: initialRootMap[ROOT_ID] });
+  // No collapsed nodes initially
+  const [collapsed, setCollapsed] = useState(new Set());
   const [costLegend, setCostLegend] = useState({
     low: { value: "10,000", bg: "#dbeafe", text: "#1e40af" },
     medium: { value: "50,000", bg: "#ffedd5", text: "#9a3412" },
     high: { value: "100,000", bg: "#fecaca", text: "#991b1b" },
   });
-  const [childrenMap, setChildrenMap] = useState(() => {
-    const initialChildren = getCategories().reduce((acc, c) => {
-      acc[c.id] = getInitiatives()
-        .filter((i) => i.parent === c.id)
-        .map((i) => i.id);
-      return acc;
-    }, {});
-    initialChildren[ROOT_ID] = getCategories().map((c) => c.id);
-    return initialChildren;
-  });
+  // Initialize childrenMap with root having no children initially
+  const [childrenMap, setChildrenMap] = useState({ [ROOT_ID]: [] });
 
   return (
     <Router>

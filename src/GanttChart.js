@@ -47,22 +47,28 @@ export default class GanttChart extends Component {
             this.isTaskBeingAdded = true;
 
             const { setDataMap, setChildrenMap, setCollapsed, dataMap, childrenMap, collapsed } = this.props;
+            // Normalize IDs to strings for consistency with FlowChart
+            const newId = String(task.id);
+            const parentId = String(task.parent);
             const newNode = {
-                id: task.id,
+                id: newId,
                 label: task.text,
-                parent: task.parent,
-                category: dataMap[task.parent]?.category || "",
-                bg: dataMap[task.parent]?.bg || "#ffffff",
-                text: dataMap[task.parent]?.text || "#000000",
+                parent: parentId,
+                category: dataMap[parentId]?.category || "",
+                bg: dataMap[parentId]?.bg || "#ffffff",
+                text: dataMap[parentId]?.text || "#000000",
             };
-            const newDataMap = { ...dataMap, [task.id]: newNode };
+            const newDataMap = { ...dataMap, [newId]: newNode };
 
             const newChildrenMap = { ...childrenMap };
-            if (newChildrenMap[task.parent]) {
-                newChildrenMap[task.parent].push(task.id);
+            if (newChildrenMap[parentId]) {
+                newChildrenMap[parentId].push(newId);
             } else {
-                newChildrenMap[task.parent] = [task.id];
+                newChildrenMap[parentId] = [newId];
             }
+
+            // Ensure the new node has an initialized children array.
+            if (!newChildrenMap[newId]) newChildrenMap[newId] = [];
 
             const newCollapsed = new Set(collapsed);
             newCollapsed.add(task.id);
@@ -200,13 +206,58 @@ export default class GanttChart extends Component {
             }
         }
 
+        // Recursively aggregate progress: parent progress = avg of all direct children (including nested)
+        const taskMap = {};
+        const childrenMap = {};
+        tasks.forEach(t => {
+            const id = String(t.id);
+            taskMap[id] = t;
+            const pid = String(t.parent);
+            childrenMap[pid] = childrenMap[pid] || [];
+            childrenMap[pid].push(id);
+        });
+
+        // Recursive function to compute and assign progress
+        const computeProgress = (id) => {
+            const node = taskMap[id];
+            const kids = childrenMap[id] || [];
+            if (kids.length === 0) {
+                return node.progress || 0;
+            }
+            const sum = kids.reduce((acc, cid) => acc + computeProgress(cid), 0);
+            const avg = sum / kids.length;
+            node.progress = avg;
+            return avg;
+        };
+
+        // Trigger computation for all top-level nodes (parent=0)
+        Object.keys(childrenMap)
+            .filter(pid => pid === '0')
+            .forEach(pid => childrenMap[pid].forEach(computeProgress));
+
         return { data: tasks, links };
     }
 
     updateGantt(dataMap) {
-        const tasks = this.transformDataForGantt(dataMap);
+        // Generate tasks and links with aggregated progress
+        const { data, links } = this.transformDataForGantt(dataMap);
         gantt.clearAll();
-        gantt.parse(tasks);
+        gantt.parse({ data, links });
+        // Sync aggregated progress for parents back into React state
+        const { setDataMap } = this.props;
+        let changed = false;
+        const newDataMap = { ...dataMap };
+        data.forEach(task => {
+            const id = String(task.id);
+            const existing = dataMap[id];
+            if (existing && typeof existing.progress === 'number' && existing.progress !== task.progress) {
+                newDataMap[id] = { ...existing, progress: task.progress };
+                changed = true;
+            }
+        });
+        if (changed) {
+            setDataMap(newDataMap);
+        }
     }
 
     handleMouseDown = (e) => {

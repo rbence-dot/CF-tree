@@ -128,6 +128,8 @@ function layoutTopDown(dataMap, collapsedSet, childrenMap) {
           nodes[id] = { ...n, x: n.x + currentChildX, y: n.y + childY };
         }
         for (const edge of layout.edges) {
+          // Preserve any source/target metadata from the child layout and
+          // offset points into the parent's coordinate space.
           edges.push({ ...edge, points: edge.points.map(([x, y]) => [x + currentChildX, y + childY]) });
         }
 
@@ -138,8 +140,12 @@ function layoutTopDown(dataMap, collapsedSet, childrenMap) {
         const childCX = childRootNode.x + currentChildX;
         const childCY = childRootNode.y + childY;
 
+        // Create edge from parent to child and tag it with the source/target ids
+        // so we can validate edges later (avoid drawing stray lines).
         edges.push({
           type: "elbow",
+          source: nodeId,
+          target: childId,
           points: [
             [parentCX, parentCY],
             [parentCX, childCY - vGap / 2],
@@ -185,10 +191,35 @@ function layoutTopDown(dataMap, collapsedSet, childrenMap) {
     const n = finalLayout.nodes[id];
     finalNodes[id] = { ...n, x: n.x + margin + offsetX, y: n.y + margin + offsetY };
   }
-  const finalEdges = finalLayout.edges.map(edge => ({
-    ...edge,
-    points: edge.points.map(([x, y]) => [x + margin + offsetX, y + margin + offsetY]),
-  }));
+
+  // Offset edges and filter out any edges that don't clearly connect two
+  // valid node centers. Build a small map of node centers to help nearest
+  // neighbour checks for edges that don't carry explicit source/target ids.
+  const nodeCenters = {};
+  for (const id in finalNodes) {
+    const n = finalNodes[id];
+    nodeCenters[id] = [n.x + n.w / 2, n.y + n.h / 2];
+  }
+
+
+  // Only draw edges that match direct parent→child relationships in childrenMap
+  const finalEdges = finalLayout.edges
+    .filter(edge => {
+      // Only edges from valid layout, with explicit source/target,
+      // that map to drawn nodes and reflect the childrenMap.
+      return (
+        edge.source &&
+        edge.target &&
+        finalNodes[edge.source] &&
+        finalNodes[edge.target] &&
+        Array.isArray(childrenMap[edge.source]) &&
+        childrenMap[edge.source].includes(edge.target)
+      );
+    })
+    .map(edge => ({
+      ...edge,
+      points: edge.points.map(([x, y]) => [x + margin + offsetX, y + margin + offsetY]),
+    }));
 
   return {
     nodes: finalNodes,
@@ -272,6 +303,18 @@ export default function FlowChart({
   setChildrenMap,
 }) {
   const [selected, setSelected] = useState(null); // node id
+  // Derive childrenMap from dataMap parent links to ensure consistency
+  const derivedChildrenMap = useMemo(() => {
+    const cm = {};
+    for (const id in dataMap) {
+      const node = dataMap[id];
+      if (node.parent) {
+        cm[node.parent] = cm[node.parent] || [];
+        cm[node.parent].push(id);
+      }
+    }
+    return cm;
+  }, [dataMap]);
 
   const parentMap = useMemo(() => {
     const map = {};
@@ -282,7 +325,10 @@ export default function FlowChart({
     }
     return map;
   }, [childrenMap]);
-  const { nodes, edges, size } = useMemo(() => layoutTopDown(dataMap, collapsed, childrenMap), [dataMap, collapsed, childrenMap]);
+  const { nodes, edges, size } = useMemo(
+    () => layoutTopDown(dataMap, collapsed, derivedChildrenMap),
+    [dataMap, collapsed, derivedChildrenMap]
+  );
   const svgRef = useRef(null);
   const svgImportInputRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -455,7 +501,10 @@ export default function FlowChart({
     setChildrenMap((cm) => {
       const next = { ...cm };
       const parentChildren = next[selected] || [];
-      next[selected] = [...parentChildren, newId];
+  next[selected] = [...parentChildren, newId];
+  // Initialize an empty children array for the new node to avoid
+  // accidental 'collapsible' UI state or undefined entries elsewhere.
+  if (!next[newId]) next[newId] = [];
       return next;
     });
     setSelected(newId);
@@ -475,7 +524,11 @@ export default function FlowChart({
       const siblings = [...(cm[parentId] || [])];
       const idx = siblings.indexOf(selected);
       siblings.splice(idx + 1, 0, newId);
-      return { ...cm, [parentId]: siblings };
+  const next = { ...cm, [parentId]: siblings };
+  // Ensure the new sibling has a children entry (empty) so UI checks
+  // like (childrenMap[id] || []).length are stable.
+  if (!next[newId]) next[newId] = [];
+  return next;
     });
     setSelected(newId);
   };
@@ -660,7 +713,7 @@ export default function FlowChart({
                 w={n.w}
                 h={n.h}
                 data={{ id, ...n.data }}
-                isCollapsible={(childrenMap[id] || []).length > 0}
+                isCollapsible={(derivedChildrenMap[id] || []).length > 0}
                 isCollapsed={collapsed.has(id)}
                 onToggle={toggleCollapse}
                 onSelect={setSelected}
