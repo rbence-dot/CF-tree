@@ -6,6 +6,7 @@ export default class GanttChart extends Component {
     constructor(props) {
         super(props);
         this.ganttContainer = React.createRef();
+        this.loadInputRef = React.createRef();
         this.isDragging = false;
         this.lastPosX = 0;
         this.isTaskBeingAdded = false;
@@ -17,6 +18,24 @@ export default class GanttChart extends Component {
         });
 
         gantt.config.fit_tasks = true;
+
+        gantt.config.columns = [
+            { name: "text", label: "Task name", tree: true, width: '' },
+            { name: "start_date", label: "Start time", align: "center" },
+            { name: "duration", label: "Duration", align: "center" },
+            { name: "progress", label: "Progress", align: "center", template: (task) => `${Math.round(task.progress * 100)}%` },
+            { name: "add", label: "", width: 44 }
+        ];
+
+        gantt.templates.task_class = (start, end, task) => {
+            if (task.progress < 0.3) {
+                return "progress-low";
+            } else if (task.progress < 0.7) {
+                return "progress-medium";
+            } else {
+                return "progress-high";
+            }
+        };
 
         gantt.init(this.ganttContainer.current);
         this.updateGantt(this.props.dataMap);
@@ -52,9 +71,7 @@ export default class GanttChart extends Component {
             setChildrenMap(newChildrenMap);
             setCollapsed(newCollapsed);
 
-            setTimeout(() => {
-                this.isTaskBeingAdded = false;
-            }, 500);
+            this.isTaskBeingAdded = false;
         });
 
         gantt.attachEvent("onAfterTaskDelete", (id, task) => {
@@ -81,6 +98,7 @@ export default class GanttChart extends Component {
                 ...newDataMap[id],
                 start_date: this.formatDate(updatedTask.start_date),
                 duration: updatedTask.duration,
+                progress: updatedTask.progress,
             };
             setDataMap(newDataMap);
         });
@@ -94,8 +112,23 @@ export default class GanttChart extends Component {
                 text: updatedTask.text,
                 start_date: this.formatDate(updatedTask.start_date),
                 duration: updatedTask.duration,
+                progress: updatedTask.progress,
             };
             setDataMap(newDataMap);
+        });
+
+        gantt.attachEvent("onTaskOpened", (id) => {
+            const { setCollapsed, collapsed } = this.props;
+            const newCollapsed = new Set(collapsed);
+            newCollapsed.delete(id);
+            setCollapsed(newCollapsed);
+        });
+
+        gantt.attachEvent("onTaskClosed", (id) => {
+            const { setCollapsed, collapsed } = this.props;
+            const newCollapsed = new Set(collapsed);
+            newCollapsed.add(id);
+            setCollapsed(newCollapsed);
         });
 
         gantt.ext.zoom.init({
@@ -153,7 +186,7 @@ export default class GanttChart extends Component {
                 start_date: node.start_date || '24-08-2025',
                 duration: node.duration || 5,
                 parent: id === 'root' ? 0 : node.parent,
-                progress: 0.5,
+                progress: node.progress || 0.5,
                 open: !collapsed.has(id),
             });
 
@@ -203,12 +236,80 @@ export default class GanttChart extends Component {
         gantt.ext.zoom.zoomOut();
     }
 
+    handleSave = async () => {
+        const { dataMap, childrenMap, collapsed, costLegend } = this.props;
+        const stateToSave = {
+            dataMap,
+            childrenMap,
+            collapsed: Array.from(collapsed),
+            costLegend,
+        };
+        const jsonString = JSON.stringify(stateToSave, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: 'gantt-chart-project.json',
+                    types: [{
+                        description: 'JSON File',
+                        accept: { 'application/json': ['.json'] },
+                    }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error("Error with showSaveFilePicker, falling back:", err);
+                }
+            }
+        }
+    }
+
+    handleLoad = () => {
+        this.loadInputRef.current.click();
+    }
+
+    handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const loadedState = JSON.parse(e.target.result);
+                if (loadedState.dataMap && loadedState.childrenMap && loadedState.collapsed && loadedState.costLegend) {
+                    this.props.setDataMap(loadedState.dataMap);
+                    this.props.setChildrenMap(loadedState.childrenMap);
+                    this.props.setCollapsed(new Set(loadedState.collapsed));
+                    this.props.setCostLegend(loadedState.costLegend);
+                }
+            } catch (error) {
+                console.error("Error loading file:", error);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = null;
+    }
+
     render() {
         return (
             <div>
+                <input
+                    type="file"
+                    ref={this.loadInputRef}
+                    onChange={this.handleFileChange}
+                    style={{ display: "none" }}
+                    accept=".json"
+                />
                 <div className="zoom-bar">
                     <button onClick={this.zoomIn}>Zoom In</button>
                     <button onClick={this.zoomOut}>Zoom Out</button>
+                    <button onClick={this.handleSave}>Save</button>
+                    <button onClick={this.handleLoad}>Load</button>
                 </div>
                 <div
                     id="gantt_here"

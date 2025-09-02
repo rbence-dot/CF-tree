@@ -19,3 +19,15 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+.progress-low .gantt_task_progress {
+    background-color: #f44336;
+}
+
+.progress-medium .gantt_task_progress {
+    background-color: #ffeb3b;
+}
+
+.progress-high .gantt_task_progress {
+    background-color: #4caf50;
+}
