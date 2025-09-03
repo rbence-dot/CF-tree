@@ -40,7 +40,7 @@ function App() {
             />
           } />
           <Route path="/gantt" element={<GanttChart dataMap={dataMap} setDataMap={setDataMap} childrenMap={childrenMap} setChildrenMap={setChildrenMap} collapsed={collapsed} setCollapsed={setCollapsed} costLegend={costLegend} setCostLegend={setCostLegend} />} />
-          <Route path="/action-plan" element={<ActionPlan dataMap={dataMap} childrenMap={childrenMap} collapsed={collapsed} setCollapsed={setCollapsed} />} />
+          <Route path="/action-plan" element={<ActionPlan dataMap={dataMap} setDataMap={setDataMap} childrenMap={childrenMap} collapsed={collapsed} setCollapsed={setCollapsed} />} />
         </Routes>
       </div>
     </Router>

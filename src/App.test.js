@@ -1,8 +1,7 @@
 import { render, screen } from '@testing-library/react';
-import App from './App';
+import App from './App.jsx';
 
-test('renders the main title', () => {
+test('renders Action Plan nav link', () => {
   render(<App />);
-  const titleElement = screen.getByText(/Control Factor Tree – Flow Diagram/i);
-  expect(titleElement).toBeInTheDocument();
+  expect(screen.getByText(/Action Plan/i)).toBeInTheDocument();
 });
