@@ -184,18 +184,53 @@ function Edge({ points }) {
 }
 
 export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed, costLegend, setCostLegend, childrenMap, setChildrenMap }) {
+	// Inject fallback styles once (mirrors Tailwind look if utilities missing)
+	useEffect(() => {
+		if (document.getElementById('fc-styles')) return;
+		const style = document.createElement('style');
+		style.id = 'fc-styles';
+		style.textContent = `
+			.fc-wrapper { display:flex; flex-direction:column; width:100%; height:100%; background:#f1f5f9; font:14px/1.3 system-ui,Segoe UI,Roboto,Arial,sans-serif; }
+			.fc-toolbar { border-bottom:2px solid #e2e8f0; background:#ffffff; padding:10px 14px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+			.fc-toolbar-group { display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; }
+			.fc-btn { padding:6px 12px; border:1px solid #cbd5e1; background:#ffffff; border-radius:10px; cursor:pointer; font-size:13px; }
+			.fc-btn:hover { background:#f1f5f9; }
+			.fc-svg-pane { flex:1; background:#ffffff; }
+			.fc-badge-strong { font-weight:600; }
+			.fc-input { border:1px solid #cbd5e1; padding:4px 8px; border-radius:6px; font:inherit; }
+		`;
+		document.head.appendChild(style);
+	}, []);
 	const [selected, setSelected] = useState(null);
 	const derivedChildrenMap = useMemo(() => {
 		const cm = {};
-		for (const id in dataMap) { const node = dataMap[id]; if (node.parent) { cm[node.parent] = cm[node.parent] || []; cm[node.parent].push(id); } }
+		for (const id in dataMap) {
+			const node = dataMap[id];
+			if (node.parent) {
+				cm[node.parent] = cm[node.parent] || [];
+				cm[node.parent].push(id);
+			}
+		}
 		return cm;
 	}, [dataMap]);
 	const parentMap = useMemo(() => {
-		const map = {}; for (const parentId in childrenMap) { for (const childId of childrenMap[parentId]) map[childId] = parentId; } return map;
+		const map = {};
+		for (const parentId in childrenMap) {
+			for (const childId of childrenMap[parentId]) map[childId] = parentId;
+		}
+		return map;
 	}, [childrenMap]);
 	const { nodes, edges, size } = useMemo(() => layoutTopDown(dataMap, collapsed, derivedChildrenMap), [dataMap, collapsed, derivedChildrenMap]);
-		const svgRef = useRef(null); const svgImportInputRef = useRef(null); const [scale, setScale] = useState(1); const [tx, setTx] = useState(0); const [ty, setTy] = useState(0); const dragRef = useRef({ dragging: false, x: 0, y: 0, tx0: 0, ty0: 0 });
-	useEffect(() => { const onWheel = (e) => { if (!svgRef.current) return; e.preventDefault(); const delta = e.deltaY > 0 ? -0.1 : 0.1; setScale((s) => Math.max(0.2, Math.min(3, s + delta))); }; const el = svgRef.current; el.addEventListener("wheel", onWheel, { passive: false }); return () => el.removeEventListener("wheel", onWheel); }, []);
+	const svgRef = useRef(null);
+	const svgImportInputRef = useRef(null);
+	const [scale, setScale] = useState(1);
+	const [tx, setTx] = useState(0);
+	const [ty, setTy] = useState(0);
+	const dragRef = useRef({ dragging: false, x: 0, y: 0, tx0: 0, ty0: 0 });
+	useEffect(() => {
+		const onWheel = (e) => { if (!svgRef.current) return; e.preventDefault(); const delta = e.deltaY > 0 ? -0.1 : 0.1; setScale((s) => Math.max(0.2, Math.min(3, s + delta))); };
+		const el = svgRef.current; el.addEventListener("wheel", onWheel, { passive: false }); return () => el.removeEventListener("wheel", onWheel);
+	}, []);
 	const onMouseDown = (e) => { dragRef.current = { dragging: true, x: e.clientX, y: e.clientY, tx0: tx, ty0: ty }; };
 	const onMouseMove = (e) => { if (!dragRef.current.dragging) return; const dx = e.clientX - dragRef.current.x; const dy = e.clientY - dragRef.current.y; setTx(dragRef.current.tx0 + dx); setTy(dragRef.current.ty0 + dy); };
 	const onMouseUp = () => (dragRef.current.dragging = false);
@@ -205,47 +240,44 @@ export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed
 	const updateNodeData = (nodeId, patch) => { if (!nodeId) return; setDataMap((m) => ({ ...m, [nodeId]: { ...m[nodeId], ...patch } })); };
 	const handleAddChild = () => { if (!selected) return; const newId = `node_${Date.now()}`; const parentNode = dataMap[selected]; const newNode = { id: newId, label: "New Initiative", category: parentNode.category, parent: selected, bg: parentNode.bg, text: parentNode.text }; setDataMap((m) => ({ ...m, [newId]: newNode })); setChildrenMap((cm) => { const next = { ...cm }; const parentChildren = next[selected] || []; next[selected] = [...parentChildren, newId]; if (!next[newId]) next[newId] = []; return next; }); setSelected(newId); };
 	const handleAddSibling = () => { if (!selected || selected === ROOT_ID) return; const parentId = parentMap[selected]; if (!parentId) return; const newId = `node_${Date.now()}`; const siblingNode = dataMap[selected]; const newNode = { id: newId, label: "New Sibling", category: siblingNode.category, parent: parentId, bg: siblingNode.bg, text: siblingNode.text }; setDataMap((m) => ({ ...m, [newId]: newNode })); setChildrenMap((cm) => { const siblings = [...(cm[parentId] || [])]; const idx = siblings.indexOf(selected); siblings.splice(idx + 1, 0, newId); const next = { ...cm, [parentId]: siblings }; if (!next[newId]) next[newId] = []; return next; }); setSelected(newId); };
-	const handleDelete = () => { if (!selected || selected === ROOT_ID) return; const nodesToDelete = new Set([selected]); const q = [selected]; while (q.length) { const curr = q.shift(); const children = childrenMap[curr] || []; for (const childId of children) if (!nodesToDelete.has(childId)) { nodesToDelete.add(childId); q.push(childId); } } setDataMap(curr => { const next = { ...curr }; nodesToDelete.forEach(id => delete next[id]); return next; }); setChildrenMap(cm => { const next = { ...cm }; const parentId = parentMap[selected]; if (parentId && next[parentId]) next[parentId] = next[parentId].filter(id => id !== selected); nodesToDelete.forEach(id => delete next[id]); return next; }); setSelected(null); };
+	const handleDelete = () => { if (!selected || selected === ROOT_ID) return; const nodesToDelete = new Set([selected]); const q = [selected]; while (q.length) { const curr = q.shift(); const ch = childrenMap[curr] || []; for (const childId of ch) if (!nodesToDelete.has(childId)) { nodesToDelete.add(childId); q.push(childId); } } setDataMap(curr => { const next = { ...curr }; nodesToDelete.forEach(id => delete next[id]); return next; }); setChildrenMap(cm => { const next = { ...cm }; const parentId = parentMap[selected]; if (parentId && next[parentId]) next[parentId] = next[parentId].filter(id => id !== selected); nodesToDelete.forEach(id => delete next[id]); return next; }); setSelected(null); };
 	const downloadSVG = async () => { const svgEl = svgRef.current; if (!svgEl) return; const svgClone = svgEl.cloneNode(true); const stateToSave = { dataMap, childrenMap, collapsed: Array.from(collapsed), costLegend }; const jsonString = JSON.stringify(stateToSave, null, 2); const scriptEl = document.createElementNS("http://www.w3.org/2000/svg", "script"); scriptEl.setAttribute("type", "application/json+cftree"); scriptEl.textContent = jsonString; let defsEl = svgClone.querySelector("defs"); if (!defsEl) { defsEl = document.createElementNS("http://www.w3.org/2000/svg", "defs"); svgClone.prepend(defsEl); } defsEl.appendChild(scriptEl); const serializer = new XMLSerializer(); const source = serializer.serializeToString(svgClone); const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" }); if (window.showSaveFilePicker) { try { const handle = await window.showSaveFilePicker({ suggestedName: 'saiccor-control-factor-tree.svg', types: [{ description: 'SVG Image', accept: { 'image/svg+xml': ['.svg'] }, }], }); const writable = await handle.createWritable(); await writable.write(blob); await writable.close(); return; } catch (err) { if (err.name === 'AbortError') return; console.error("Error with showSaveFilePicker, falling back:", err); } } const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "saiccor-control-factor-tree.svg"; a.click(); URL.revokeObjectURL(url); };
 	const handleImportSVG = (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const svgString = e.target.result; const parser = new DOMParser(); const svgDoc = parser.parseFromString(svgString, "image/svg+xml"); const scriptEl = svgDoc.querySelector('script[type="application/json+cftree"]'); if (!scriptEl) { alert("This SVG file does not contain project data."); return; } const loadedState = JSON.parse(scriptEl.textContent); if (loadedState.dataMap && loadedState.childrenMap && loadedState.collapsed && loadedState.costLegend) { setDataMap(loadedState.dataMap); setChildrenMap(loadedState.childrenMap); setCollapsed(new Set(loadedState.collapsed)); setCostLegend(loadedState.costLegend); setSelected(null); alert("Project imported successfully!"); } else { alert("Invalid project data in SVG file."); } } catch (error) { console.error("Error importing SVG:", error); alert("Failed to import SVG file."); } }; reader.readAsText(file); event.target.value = null; };
 	const handleImportClick = () => svgImportInputRef.current.click();
+
 	return (
-		<div className="w-full h-full flex flex-col bg-gray-100">
+		<div className="fc-wrapper">
 			<input type="file" ref={svgImportInputRef} onChange={handleImportSVG} style={{ display: "none" }} accept=".svg" />
-			<div className="border-b-2 border-gray-200 bg-white p-3 z-10 overflow-x-auto">
-				<div className="flex flex-nowrap items-center gap-x-4 text-sm">
-					<div className="flex items-center gap-x-3 p-2 border rounded-lg bg-gray-50/50">
-						<strong className="shrink-0">Inspector</strong>
-						{!selected && <div className="opacity-60 whitespace-nowrap px-2">Select a node</div>}
-						{selected && (
-							<div className="flex items-center gap-2">
-								<button className="px-3 py-1.5 rounded-md border text-center bg-blue-50 hover:bg-blue-100" onClick={handleAddChild}>Add Child</button>
-								{selected !== ROOT_ID && <button className="px-3 py-1.5 rounded-md border text-center bg-gray-100 hover:bg-gray-200" onClick={handleAddSibling}>Sibling</button>}
-								{(childrenMap[selected] || []).length > 0 && <button className="px-3 py-1.5 rounded-md border" onClick={() => toggleCollapse(selected)}>{collapsed.has(selected) ? "Expand" : "Collapse"}</button>}
-								{selected !== ROOT_ID && <button className="px-3 py-1.5 rounded-md border text-center bg-red-50 hover:bg-red-100 text-red-700" onClick={handleDelete}>Delete</button>}
-							</div>
-						)}
-					</div>
+			<div className="fc-toolbar" style={{ overflowX: 'auto' }}>
+				<div className="fc-toolbar-group">
+					<strong className="fc-badge-strong">Inspector</strong>
+					{!selected && <div style={{ opacity: .6, whiteSpace: 'nowrap', padding: '0 4px' }}>Select a node</div>}
 					{selected && (
-						<div className="flex items-center gap-x-2 p-2 border rounded-lg bg-gray-50/50">
-							<label className="opacity-70">Title</label>
-							<input className="w-48 border rounded-md px-2 py-1" value={dataMap[selected]?.label || ""} onChange={(e) => updateSelected({ label: e.target.value })} />
+						<div style={{ display: 'flex', gap: 6 }}>
+							<button className="fc-btn" onClick={handleAddChild}>Add Child</button>
+							{selected !== ROOT_ID && <button className="fc-btn" onClick={handleAddSibling}>Sibling</button>}
+							{(childrenMap[selected] || []).length > 0 && <button className="fc-btn" onClick={() => toggleCollapse(selected)}>{collapsed.has(selected) ? "Expand" : "Collapse"}</button>}
+							{selected !== ROOT_ID && <button className="fc-btn" style={{ background: '#fef2f2', color: '#b91c1c' }} onClick={handleDelete}>Delete</button>}
 						</div>
 					)}
-					<div className="flex-grow"></div>
-					<div className="flex items-center gap-x-4">
-						<div className="font-semibold whitespace-nowrap">Control Factor Tree – Flow Diagram</div>
-						<div className="flex items-center gap-2">
-							<button className="px-3 py-1.5 rounded-xl border" onClick={() => setScale((s) => Math.min(3, s + 0.1))}>Zoom +</button>
-							<button className="px-3 py-1.5 rounded-xl border" onClick={() => setScale((s) => Math.max(0.2, s - 0.1))}>Zoom −</button>
-							<button className="px-3 py-1.5 rounded-xl border" onClick={fitView}>Fit</button>
-							<button className="px-3 py-1.5 rounded-xl border" onClick={handleImportClick}>Import SVG</button>
-							<button className="px-3 py-1.5 rounded-xl border" onClick={downloadSVG}>Export SVG</button>
-						</div>
+				</div>
+				{selected && (
+					<div className="fc-toolbar-group">
+						<label style={{ opacity: .7 }}>Title</label>
+						<input className="fc-input" style={{ width: 192 }} value={dataMap[selected]?.label || ""} onChange={(e) => updateSelected({ label: e.target.value })} />
 					</div>
+				)}
+				<div style={{ flexGrow: 1 }} />
+				<div className="fc-toolbar-group" style={{ gap: 12 }}>
+					<div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>Control Factor Tree – Flow Diagram</div>
+					<button className="fc-btn" onClick={() => setScale((s) => Math.min(3, s + 0.1))}>Zoom +</button>
+					<button className="fc-btn" onClick={() => setScale((s) => Math.max(0.2, s - 0.1))}>Zoom −</button>
+					<button className="fc-btn" onClick={fitView}>Fit</button>
+					<button className="fc-btn" onClick={handleImportClick}>Import SVG</button>
+					<button className="fc-btn" onClick={downloadSVG}>Export SVG</button>
 				</div>
 			</div>
-			<div className="flex-1 bg-white" onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
+			<div className="fc-svg-pane" onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
 				<svg ref={svgRef} width="100%" height="100%" viewBox={`0 0 ${size.width} ${size.height}`} style={{ cursor: "grab", userSelect: "none" }} onMouseDown={onMouseDown}>
 					<defs>
 						<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -262,4 +294,5 @@ export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed
 			</div>
 		</div>
 	);
+
 }
