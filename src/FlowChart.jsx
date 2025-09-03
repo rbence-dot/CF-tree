@@ -138,7 +138,7 @@ function layoutTopDown(dataMap, collapsedSet, childrenMap) {
 	return { nodes: finalNodes, edges: finalEdges, size: { width: vpWidth, height: vpHeight }, metrics: { nodeW, nodeH } };
 }
 
-function Node({ id, x, y, w, h, data, isCollapsible, isCollapsed, onToggle, onSelect, onUpdateData, costLegend }) {
+function Node({ id, x, y, w, h, data, isCollapsible, isCollapsed, onToggle, onSelect, onUpdateData, costLegend, selected }) {
 	const { label, category, savings, effort, bg, text } = data;
 	const levelOptions = ["Low", "Medium", "High"];
 	const levelToKey = { Low: "low", Medium: "medium", High: "high" };
@@ -148,7 +148,7 @@ function Node({ id, x, y, w, h, data, isCollapsible, isCollapsed, onToggle, onSe
 	const effortStyle = effortKey && costLegend[effortKey] ? { backgroundColor: costLegend[effortKey].bg, color: costLegend[effortKey].text } : {};
 	return (
 		<g transform={`translate(${x},${y})`} onClick={() => onSelect(id)} style={{ cursor: "pointer" }}>
-			<rect x={0} y={0} width={w} height={h} rx={14} ry={14} fill={bg || defaults.bg[category] || "#FFFFFF"} stroke={defaults.stroke} />
+			<rect x={0} y={0} width={w} height={h} rx={14} ry={14} fill={bg || defaults.bg[category] || "#FFFFFF"} stroke={selected ? '#3B82F6' : defaults.stroke} strokeWidth={selected ? 3 : 1} />
 			<foreignObject x={12} y={8} width={w - 24} height={h - 16}>
 				<div style={{ fontFamily: "Inter, system-ui, sans-serif", color: text || defaults.text, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
 					<div>
@@ -267,6 +267,14 @@ export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed
 						<input className="fc-input" style={{ width: 192 }} value={dataMap[selected]?.label || ""} onChange={(e) => updateSelected({ label: e.target.value })} />
 					</div>
 				)}
+				{selected && (
+					<div className="fc-toolbar-group" style={{ gap: 4 }}>
+						<label style={{ opacity: .7, whiteSpace: 'nowrap' }}>Color</label>
+						{['#FEF3C7','#E0F2FE','#D1FAE5','#FAE8FF','#FEE2E2','#E2E8F0','#DCFCE7','#E0E7FF','#F1F5F9'].map(c => (
+							<button key={c} onClick={() => updateSelected({ bg: c })} style={{ width: 24, height: 24, borderRadius: 6, border: dataMap[selected]?.bg === c ? '2px solid #2563EB' : '1px solid #94A3B8', background: c, cursor: 'pointer', padding: 0 }} title={c} />
+						))}
+					</div>
+				)}
 				<div style={{ flexGrow: 1 }} />
 				<div className="fc-toolbar-group" style={{ gap: 12 }}>
 					<div style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>Control Factor Tree – Flow Diagram</div>
@@ -287,7 +295,7 @@ export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed
 					<g transform={`translate(${tx},${ty}) scale(${scale})`}>
 						{edges.map((e, idx) => <Edge key={idx} points={e.points} />)}
 						{Object.entries(nodes).map(([id, n]) => (
-							<Node key={id} id={id} x={n.x} y={n.y} w={n.w} h={n.h} data={{ id, ...n.data }} isCollapsible={(derivedChildrenMap[id] || []).length > 0} isCollapsed={collapsed.has(id)} onToggle={toggleCollapse} onSelect={setSelected} onUpdateData={updateNodeData} costLegend={costLegend} />
+							<Node key={id} id={id} x={n.x} y={n.y} w={n.w} h={n.h} data={{ id, ...n.data }} isCollapsible={(derivedChildrenMap[id] || []).length > 0} isCollapsed={collapsed.has(id)} onToggle={toggleCollapse} onSelect={setSelected} onUpdateData={updateNodeData} costLegend={costLegend} selected={selected === id} />
 						))}
 					</g>
 				</svg>

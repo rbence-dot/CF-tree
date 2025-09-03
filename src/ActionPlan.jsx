@@ -19,13 +19,29 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
   // Build hierarchical flat rows
   const buildRows = useCallback(() => {
     const out = [];
+    // Precompute aggregated progress so parents reflect child updates (mirrors Gantt summary behavior)
+    const progressCache = {};
+    const computeProgress = (id) => {
+      if (progressCache[id] != null) return progressCache[id];
+      const kids = childrenMap[id] || [];
+      if (!kids.length) {
+        // Leaf: take stored progress (0..1) or default 0
+        return (progressCache[id] = (dataMap[id]?.progress ?? 0));
+      }
+      // Average of children (simple unweighted). Could be enhanced to duration‑weighted if durations added.
+      const sum = kids.reduce((acc, k) => acc + computeProgress(k), 0);
+      return (progressCache[id] = kids.length ? sum / kids.length : 0);
+    };
+    // Seed computation from root's direct children
+    (childrenMap['root'] || []).forEach(id => computeProgress(id));
     const walk = (parent, prefix = '') => {
       (childrenMap[parent] || []).forEach((id, i) => {
         if (parent !== 'root' && collapsed.has(parent)) return;
         const num = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
         const node = dataMap[id] || {};
         const kids = childrenMap[id] || [];
-        const progressPct = Math.round((node.progress || 0) * 100);
+        const effectiveProgress = progressCache[id] != null ? progressCache[id] : (node.progress || 0);
+        const progressPct = Math.round(effectiveProgress * 100);
         out.push({
           id,
             parent,
@@ -68,12 +84,14 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
     }));
   }, [setDataMap]);
 
-  const beginEdit = (rowId, colIdx) => {
+  const beginEdit = (rowId, colIdx, initialChar) => {
     const colDef = COLS[colIdx];
     if (!colDef || !colDef.editable) return;
     const row = rows.find(r => r.id === rowId);
     setSel({ id: rowId, colIdx });
-    setDraft(row?.data[colDef.key] || '');
+    // If user started typing, replace content with that first char (spreadsheet behavior)
+    const existing = row?.data[colDef.key] || '';
+    setDraft(initialChar !== undefined ? initialChar : existing);
     setEditing(true);
   };
 
@@ -94,6 +112,8 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
   const handleCellClick = (rowId, colIdx) => {
     setSel({ id: rowId, colIdx });
     setEditing(false);
+    // Ensure key events captured for type-to-edit
+    if (tableRef.current) tableRef.current.focus();
   };
 
   const handleCellDouble = (rowId, colIdx) => beginEdit(rowId, colIdx);
@@ -105,6 +125,16 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
       return;
     }
     if (sel.id == null) return;
+    // Type-to-edit: printable characters start editing immediately
+    const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (printable) {
+      const colDef = COLS[sel.colIdx];
+      if (colDef && colDef.editable) {
+        beginEdit(sel.id, sel.colIdx, e.key);
+        e.preventDefault();
+        return;
+      }
+    }
     const rowIndex = rows.findIndex(r => r.id === sel.id);
     const move = (rDelta, cDelta) => {
       const newRowIdx = Math.min(Math.max(rowIndex + rDelta, 0), rows.length - 1);
@@ -119,6 +149,11 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
       case 'ArrowLeft': e.preventDefault(); move(0, -1); break;
       case 'Enter': e.preventDefault(); beginEdit(sel.id, sel.colIdx); break;
       case 'F2': e.preventDefault(); beginEdit(sel.id, sel.colIdx); break;
+      case 'Delete': case 'Backspace': {
+        const colDef = COLS[sel.colIdx];
+        if (colDef?.editable) { beginEdit(sel.id, sel.colIdx, ''); e.preventDefault(); }
+        break;
+      }
       default: break;
     }
   };
@@ -145,6 +180,7 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
       .ap-table { width:100%; border-spacing:0; table-layout:fixed; }
       .ap-table thead th { position:sticky; top:0; background:linear-gradient(to bottom,var(--ap-header-from),var(--ap-header-to)); font-size:11px; text-transform:uppercase; letter-spacing:.5px; border:1px solid var(--ap-border); padding:6px 8px; text-align:center; font-weight:600; z-index:10; }
       .ap-table tbody td { border:1px solid var(--ap-border); padding:4px 6px; vertical-align:top; background:var(--ap-bg); }
+  .ap-table tbody td { position:relative; }
       .ap-row-alt td { background:var(--ap-bg-alt); }
       .ap-row:hover td { background:var(--ap-bg-hover); }
       .ap-cell-sticky { position:sticky; left:0; background:var(--ap-bg); z-index:11; box-shadow:2px 0 0 0 var(--ap-border); }
@@ -164,14 +200,15 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
       .ap-hints { display:flex; gap:18px; flex-wrap:wrap; font-size:11px; color:#475569; background:#f1f5f9; border-top:1px solid var(--ap-border); padding:6px 10px; }
       .ap-editable-hint { position:absolute; top:2px; right:2px; font-size:9px; opacity:0; color:#64748b; }
       .ap-row:hover .ap-editable-hint { opacity:.55; }
+  .ap-cell-text { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
     `;
     document.head.appendChild(style);
   }, []);
 
   return (
-    <div className="ap-wrapper p-5" onKeyDown={onKeyDown}>
+  <div className="ap-wrapper p-5">
       <h1 className="ap-title">Action Plan</h1>
-      <div ref={tableRef} tabIndex={0} className="ap-container">
+  <div ref={tableRef} tabIndex={0} className="ap-container" onKeyDown={onKeyDown}>
         <table className="ap-table select-none">
           <thead>
             <tr>
@@ -217,7 +254,7 @@ export default function ActionPlan({ dataMap, setDataMap, childrenMap = {}, coll
                           <span className="ap-progress-text">{value}%</span>
                         </div>
                       ) : (
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{value}</div>
+                        <div className="ap-cell-text" title={value}>{value}</div>
                       )}
                       {editable && !selected && !editing && (
                         <span className="ap-editable-hint">✎</span>
