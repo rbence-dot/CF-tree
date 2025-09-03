@@ -2,6 +2,9 @@ import React, { Component } from 'react';
 import { gantt } from 'dhtmlx-gantt';
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css';
 
+// Internal constant to align with other views (FlowChart / ActionPlan)
+const ROOT_ID = 'root';
+
 export default class GanttChart extends Component {
 	constructor(props) {
 		super(props);
@@ -26,20 +29,56 @@ export default class GanttChart extends Component {
 		gantt.init(this.ganttContainer.current);
 		this.updateGantt(this.props.dataMap);
 		gantt.attachEvent('onAfterTaskAdd', (id, task) => {
-			if (this.isTaskBeingAdded) return; this.isTaskBeingAdded = true;
-			const { setDataMap, setChildrenMap, setCollapsed, dataMap, childrenMap, collapsed } = this.props;
-			const newId = String(task.id); const parentId = String(task.parent);
-			const newNode = { id: newId, label: task.text, parent: parentId, category: dataMap[parentId]?.category || '', bg: dataMap[parentId]?.bg || '#ffffff', text: dataMap[parentId]?.text || '#000000' };
-			const newDataMap = { ...dataMap, [newId]: newNode };
-			const newChildrenMap = { ...childrenMap }; if (newChildrenMap[parentId]) newChildrenMap[parentId].push(newId); else newChildrenMap[parentId] = [newId]; if (!newChildrenMap[newId]) newChildrenMap[newId] = [];
-			const newCollapsed = new Set(collapsed); newCollapsed.add(task.id);
-			setDataMap(newDataMap); setChildrenMap(newChildrenMap); setCollapsed(newCollapsed); this.isTaskBeingAdded = false;
+			// This event sometimes fires twice internally; guard + id / array uniqueness.
+			if (this.isTaskBeingAdded) return;
+			this.isTaskBeingAdded = true;
+			try {
+				const { setDataMap, setChildrenMap, setCollapsed, dataMap, childrenMap, collapsed } = this.props;
+				const newId = String(id);
+				let parentId = String(task.parent);
+				// Gantt uses numeric 0 for top-level; normalize to our ROOT_ID
+				if (parentId === '0') parentId = ROOT_ID;
+				// Skip if node already exists (prevents duplication in ActionPlan)
+				if (dataMap[newId]) return;
+				const parentNode = dataMap[parentId];
+				const baseCategory = parentNode?.category || '';
+				const newNode = {
+					id: newId,
+					label: task.text,
+					parent: parentId === ROOT_ID ? ROOT_ID : parentId,
+					category: baseCategory,
+					bg: parentNode?.bg || '#ffffff',
+					text: parentNode?.text || '#000000',
+					// seed scheduling / progress data from task object if present
+					start_date: task.start_date ? this.formatDate(task.start_date) : undefined,
+					duration: task.duration,
+					progress: typeof task.progress === 'number' ? task.progress : 0
+				};
+				setDataMap(dm => ({ ...dm, [newId]: newNode }));
+				setChildrenMap(cm => {
+					const next = { ...cm };
+					const arr = next[parentId] ? [...next[parentId]] : [];
+					if (!arr.includes(newId)) arr.push(newId);
+					next[parentId] = arr;
+					if (!next[newId]) next[newId] = [];
+					return next;
+				});
+				setCollapsed(prev => { const ns = new Set(prev); ns.add(newId); return ns; });
+			} finally {
+				this.isTaskBeingAdded = false;
+			}
 		});
 		gantt.attachEvent('onAfterTaskDelete', (id, task) => {
 			const { setDataMap, setChildrenMap, dataMap, childrenMap } = this.props;
-			const newDataMap = { ...dataMap }; delete newDataMap[id];
-			const newChildrenMap = { ...childrenMap }; if (newChildrenMap[task.parent]) newChildrenMap[task.parent] = newChildrenMap[task.parent].filter(childId => childId !== id);
-			setDataMap(newDataMap); setChildrenMap(newChildrenMap);
+			let parentId = String(task.parent);
+			if (parentId === '0') parentId = ROOT_ID;
+			setDataMap(dm => { const next = { ...dm }; delete next[id]; return next; });
+			setChildrenMap(cm => {
+				const next = { ...cm };
+				if (next[parentId]) next[parentId] = next[parentId].filter(childId => childId !== String(id));
+				delete next[id];
+				return next;
+			});
 		});
 		gantt.attachEvent('onAfterTaskDrag', (id, mode, task, original) => {
 			const { setDataMap } = this.props; const updatedTask = gantt.getTask(id); const newDataMap = { ...this.props.dataMap }; newDataMap[id] = { ...newDataMap[id], start_date: this.formatDate(updatedTask.start_date), duration: updatedTask.duration, progress: updatedTask.progress }; setDataMap(newDataMap);
