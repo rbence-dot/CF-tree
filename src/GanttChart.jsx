@@ -19,12 +19,13 @@ export default class GanttChart extends Component {
 		gantt.plugins({ zoom: true });
 		gantt.config.fit_tasks = true;
 		gantt.config.columns = [
-			{ name: 'text', label: 'Task name', tree: true, width: '' },
+			{ name: 'text', label: 'Task name', tree: true, width: 260 },
 			{ name: 'start_date', label: 'Start time', align: 'center' },
 			{ name: 'duration', label: 'Duration', align: 'center' },
 			{ name: 'progress', label: 'Progress', align: 'center', template: (task) => `${Math.round(task.progress * 100)}%` },
 			{ name: 'add', label: '', width: 44 }
 		];
+		// NOTE: built-in layout resizer may not render in some themes; we'll inject a manual resizer after init as fallback.
 		gantt.templates.task_class = (start, end, task) => task.progress < 0.3 ? 'progress-low' : task.progress < 0.7 ? 'progress-medium' : 'progress-high';
 		gantt.init(this.ganttContainer.current);
 		this.updateGantt(this.props.dataMap);
@@ -89,6 +90,89 @@ export default class GanttChart extends Component {
 		gantt.attachEvent('onTaskOpened', (id) => { const { setCollapsed, collapsed } = this.props; const nc = new Set(collapsed); nc.delete(id); setCollapsed(nc); });
 		gantt.attachEvent('onTaskClosed', (id) => { const { setCollapsed, collapsed } = this.props; const nc = new Set(collapsed); nc.add(id); setCollapsed(nc); });
 		gantt.ext.zoom.init({ levels: [ { name: 'day', scale_height: 27, min_column_width: 80, scales: [{ unit: 'day', step: 1, format: '%d %M' }] }, { name: 'week', scale_height: 50, min_column_width: 50, scales: [{ unit: 'week', step: 1, format: date => 'Week #' + gantt.date.getWeek(date) }, { unit: 'day', step: 1, format: '%j %D' }] }, { name: 'month', scale_height: 50, min_column_width: 120, scales: [{ unit: 'month', step: 1, format: '%F, %Y' }, { unit: 'week', step: 1, format: 'Week #%W' }] }, { name: 'quarter', scale_height: 50, min_column_width: 90, scales: [{ unit: 'quarter', step: 1, format: date => 'Q' + (Math.floor(date.getMonth() / 3) + 1) }, { unit: 'month', step: 1, format: '%M' }] }, { name: 'year', scale_height: 50, min_column_width: 30, scales: [{ unit: 'year', step: 1, format: '%Y' }] } ] });
+		// Enable horizontal drag scrolling on the timeline header
+		// Utility: inject styles for custom resizers (idempotent)
+		if (!document.getElementById('gantt-custom-resize-styles')) {
+			const st = document.createElement('style');
+			st.id = 'gantt-custom-resize-styles';
+			st.textContent = `
+				.gantt-grid-resizer { position:absolute; top:0; bottom:0; width:8px; cursor:col-resize; background:rgba(148,163,184,0.25); transition:background .15s; z-index:40; }
+				.gantt-grid-resizer:hover { background:rgba(59,130,246,0.45); }
+				.gantt-grid-resizer.dragging { background:rgba(59,130,246,0.75); }
+				.gantt-header-col-resizer { position:absolute; top:0; right:0; width:6px; cursor:col-resize; user-select:none; }
+			`;
+			document.head.appendChild(st);
+		}
+
+		const attachGridResizer = () => {
+			const cont = this.ganttContainer.current;
+			if (!cont) return;
+			const grid = cont.querySelector('.gantt_grid');
+			const timeline = cont.querySelector('.gantt_task');
+			if (!grid || !timeline) return;
+			if (cont.querySelector('.gantt-grid-resizer')) return; // already added
+			const resizer = document.createElement('div');
+			resizer.className = 'gantt-grid-resizer';
+			cont.style.position = 'relative';
+			resizer.style.left = grid.offsetWidth - 4 + 'px';
+			cont.appendChild(resizer);
+			let startX = 0; let startWidth = 0; let dragging = false; let raf = 0;
+			const onMove = (e) => {
+				if (!dragging) return;
+				const dx = e.clientX - startX; const newW = Math.max(140, startWidth + dx);
+				if (raf) cancelAnimationFrame(raf);
+				raf = requestAnimationFrame(() => {
+					gantt.config.grid_width = newW; // built-in property respected by setSizes
+					gantt.setSizes();
+					resizer.style.left = (newW - 4) + 'px';
+				});
+			};
+			const onUp = () => { if (!dragging) return; dragging = false; resizer.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+			resizer.addEventListener('mousedown', (e) => { e.preventDefault(); startX = e.clientX; startWidth = grid.offsetWidth; dragging = true; resizer.classList.add('dragging'); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); });
+		};
+
+		const attachHeaderColumnResizer = () => {
+			const cont = this.ganttContainer.current; if (!cont) return;
+			// Try several selectors to find the task name header cell (library versions differ)
+			const candidates = [
+				'.gantt_grid_head_cell[data-column-name="text"]',
+				'.gantt_grid_head_cell[name="text"]',
+				'.gantt_grid_head_cell.gantt_grid_head_text',
+				'.gantt_grid_head_cell'
+			];
+			let headerCell = null;
+			for (const sel of candidates) { const el = cont.querySelector(sel); if (el) { headerCell = el; break; } }
+			if (!headerCell) return;
+			if (headerCell.querySelector('.gantt-header-col-resizer')) return; // already added
+			headerCell.style.position = 'relative';
+			const r = document.createElement('div');
+			r.className = 'gantt-header-col-resizer';
+			Object.assign(r.style, { background:'transparent' });
+			headerCell.appendChild(r);
+			let sx=0, sw=0, dragging=false, frame=0;
+			const move = (e) => { if(!dragging) return; const dx = e.clientX - sx; const nw = Math.max(120, sw + dx); if (frame) cancelAnimationFrame(frame); frame = requestAnimationFrame(()=>{ gantt.config.columns[0].width = nw; gantt.render(); }); };
+			const up = () => { if(!dragging) return; dragging=false; r.style.background='transparent'; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+			r.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); dragging=true; sx=e.clientX; sw=headerCell.getBoundingClientRect().width; r.style.background='rgba(59,130,246,0.45)'; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); });
+		};
+
+		// Re-attach on each gantt render to survive internal re-renders
+		if (!this._columnResizeEvt) {
+			this._columnResizeEvt = gantt.attachEvent('onGanttRender', () => {
+				attachHeaderColumnResizer();
+			});
+		}
+
+		setTimeout(() => {
+			const timelineHeader = this.ganttContainer.current?.querySelector('.gantt_task_scale');
+			if (timelineHeader) {
+				timelineHeader.style.cursor = 'grab';
+				timelineHeader.addEventListener('mousedown', this.handleMouseDown);
+				document.addEventListener('mousemove', this.handleMouseMove);
+				document.addEventListener('mouseup', this.handleMouseUp);
+			}
+			attachGridResizer();
+			attachHeaderColumnResizer();
+		}, 0);
 	}
 	componentWillUnmount() {
 		const timelineHeader = this.ganttContainer.current?.querySelector('.gantt_task_scale'); if (timelineHeader) timelineHeader.removeEventListener('mousedown', this.handleMouseDown); document.removeEventListener('mouseup', this.handleMouseUp); document.removeEventListener('mousemove', this.handleMouseMove);
@@ -104,8 +188,8 @@ export default class GanttChart extends Component {
 		const computeBounds = (id) => { const node = taskMap[id]; const kids = childrenMap[id] || []; let start = parseDate(node.start_date); let end = new Date(start); end.setDate(end.getDate() + (node.duration || 0)); if (kids.length) { kids.forEach(cid => { const { start: cs, end: ce } = computeBounds(cid); if (cs < start) start = cs; if (ce > end) end = ce; }); node.start_date = formatDate(start); node.duration = Math.ceil((end - start) / (1000 * 60 * 60 * 24)); } return { start, end }; };
 		(childrenMap['0'] || []).forEach(computeBounds); return { data: tasks, links }; }
 	updateGantt(dataMap) { const { data, links } = this.transformDataForGantt(dataMap); gantt.clearAll(); gantt.parse({ data, links }); }
-	handleMouseDown = (e) => { if (e.target.closest('.gantt_task_line')) return; this.isDragging = true; this.lastPosX = e.clientX; }
-	handleMouseUp = () => { this.isDragging = false; }
+	handleMouseDown = (e) => { if (e.button !== 0) return; if (e.target.closest('.gantt_task_line')) return; this.isDragging = true; this.lastPosX = e.clientX; const timelineHeader = this.ganttContainer.current?.querySelector('.gantt_task_scale'); if (timelineHeader) timelineHeader.style.cursor = 'grabbing'; }
+	handleMouseUp = () => { if (!this.isDragging) return; this.isDragging = false; const timelineHeader = this.ganttContainer.current?.querySelector('.gantt_task_scale'); if (timelineHeader) timelineHeader.style.cursor = 'grab'; }
 	handleMouseMove = (e) => { if (!this.isDragging) return; const delta = e.clientX - this.lastPosX; this.lastPosX = e.clientX; gantt.scrollTo(gantt.getScrollState().x - delta, null); }
 	zoomIn = () => { gantt.ext.zoom.zoomIn(); }
 	zoomOut = () => { gantt.ext.zoom.zoomOut(); }
