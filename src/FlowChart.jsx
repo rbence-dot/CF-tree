@@ -268,6 +268,14 @@ export default function FlowChart({ dataMap, setDataMap, collapsed, setCollapsed
 					</div>
 				)}
 				{selected && (
+					<div className="fc-toolbar-group" style={{ gap:8 }}>
+						<label style={{ display:'flex', alignItems:'center', gap:6, fontSize:12 }}>
+							<input type="checkbox" checked={!!dataMap[selected]?.projectMain} onChange={e => updateSelected({ projectMain: e.target.checked })} />
+							<span>Include in Priority</span>
+						</label>
+					</div>
+				)}
+				{selected && (
 					<div className="fc-toolbar-group" style={{ gap: 4 }}>
 						<label style={{ opacity: .7, whiteSpace: 'nowrap' }}>Color</label>
 						{['#FEF3C7','#E0F2FE','#D1FAE5','#FAE8FF','#FEE2E2','#E2E8F0','#DCFCE7','#E0E7FF','#F1F5F9'].map(c => (
